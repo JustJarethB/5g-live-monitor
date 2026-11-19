@@ -9,6 +9,16 @@ Pick **Down**, **Both** or **Up**. The big number updates
 with dashed average and dotted peak lines for the visible window.
 You can optionally tag spots to get a per-spot comparison table, and export a CSV.
 
+### Floor map (beta, opt-in)
+
+Turn on **Floor map** in Settings to place readings on a 2D heatmap of 25 cm squares as you walk.
+It works on iPhone and Android, using step counting from the accelerometer and the phone's
+orientation sensors (iPhone will ask for Motion & Orientation access). Set your step length
+in Settings for best results. Because it's dead reckoning, position drifts by roughly 5–10%
+of the distance walked; walk back to the start point to see how far it has drifted. Up on the map is the
+direction you faced when you pressed Start tracking / Reset map. The best square (at least
+2 s of readings) is outlined.
+
 Traffic goes to Cloudflare's public speed-test endpoints (`speed.cloudflare.com/__down` and `/__up`).
 
 **Data use:** it keeps the link saturated, so it uses data at full line rate (about 2 GB/min at 300 Mbps).
