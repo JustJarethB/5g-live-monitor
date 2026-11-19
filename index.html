@@ -189,7 +189,7 @@
         <label>Auto-stop after <input id="optCap" type="number" min="0" step="0.5" value="10"> GB (0 = never)</label>
         <p class="hint">This keeps the connection busy all the time, so it uses data at your full speed: roughly 2 GB a minute at 300 Mbps. The auto-stop protects capped plans.</p>
         <label><input id="optMap" type="checkbox"> Floor map (beta): uses the motion sensors to place readings on a 2D map</label>
-        <label><input id="optSide" type="checkbox" checked> Detect sideways and backward steps (calibrates on your first 8 forward steps)</label>
+        <label><input id="optSide" type="checkbox" checked> Detect step direction (sideways, backward, diagonal; calibrates on your first 8 forward steps)</label>
         <label>Your step length <input id="optStep" type="number" min="30" max="120" value="70"> cm</label>
         <p class="hint">Step length matters for map accuracy: walk 10 normal steps, measure the distance, and divide by 10 (roughly 0.41 × your height). The map works by counting steps and tracking which way the phone points. It can't see walls, so expect drift of around 5–10% of the distance walked; walk back to the start to see how far it has drifted.</p>
         <p class="hint">In Both mode, download and upload run at the same time and share the radio link, so each can read a little lower than when tested alone.</p>
@@ -560,7 +560,7 @@
     cells: new Map(), path: [{ x: 0, y: 0 }],
     g: [0, 0, 0], gInit: false, vs: 0, armed: true, lastStepT: 0,
     R: null, accSign: 1, eb: null, ls: null, prevZ: null, lastT: 0, dirAcc: [0, 0, 0], prevAcc: [0, 0, 0],
-    cal: { n: 0, x: 0, y: 0, offset: 0 }, lastDir: '',
+    cal: { n: 0, x: 0, y: 0, offset: 0 }, lastDir: '', lastRel: 0, lastRelT: 0,
     gotMotion: false, gotOrient: false, hover: null
   };
   const fmt = v => !Number.isFinite(v) ? '–' : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
@@ -643,16 +643,23 @@
     M.dirAcc[2] += Math.hypot(M.ls[0], M.ls[1]) * Math.abs(dz) * dt;
   }
   const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
-  const DIR_NAMES = { 0: 'forward', 1: 'right', 2: 'back', 3: 'left' };
+  const dirLabel = d => {
+    const deg = Math.round(Math.abs(d) * 180 / Math.PI);
+    return deg <= 10 ? 'straight ahead' : deg >= 170 ? 'straight back' : `${deg}° ${d > 0 ? 'right' : 'left'} of facing`;
+  };
   const CAL_STEPS = 8;
-  // Returns the step's movement angle relative to the phone's heading (0, ±π/2, π).
+  // Returns the step's movement angle relative to the phone's heading (radians, clockwise positive).
   function stepOffset() {
     const cur = M.dirAcc; M.dirAcc = [0, 0, 0];
     const win = [cur[0] + M.prevAcc[0], cur[1] + M.prevAcc[1], cur[2] + M.prevAcc[2]];   // two steps = one stride
     M.prevAcc = cur;
     if (!$('optSide').checked || !Number.isFinite(M.heading)) { M.lastDir = 'forward'; return 0; }
     const conf = win[2] > 0 ? Math.hypot(win[0], win[1]) / win[2] : 0;
-    if (conf < 0.2) { M.lastDir = 'forward (unsure)'; return 0; }
+    if (conf < 0.2) {                              // weak signal: keep the last confident direction briefly
+      const recent = performance.now() - M.lastRelT < 2000;
+      M.lastDir = (recent ? dirLabel(M.lastRel) : 'straight ahead') + ' (unsure)';
+      return recent ? M.lastRel : 0;
+    }
     const rel = wrap(Math.atan2(win[0], win[1]) - M.heading);
     if (M.cal.n < CAL_STEPS) {                     // learn this phone's bias from normal forward walking
       M.cal.x += Math.sin(rel); M.cal.y += Math.cos(rel); M.cal.n++;
@@ -660,9 +667,9 @@
       M.lastDir = 'forward (calibrating)'; return 0;
     }
     const d = wrap(rel - M.cal.offset);
-    const sector = ((Math.round(d / (Math.PI / 2)) % 4) + 4) % 4;      // 0 fwd, 1 right, 2 back, 3 left
-    M.lastDir = DIR_NAMES[sector];
-    return [0, Math.PI / 2, Math.PI, -Math.PI / 2][sector];
+    M.lastRel = d; M.lastRelT = performance.now();
+    M.lastDir = dirLabel(d);
+    return d;
   }
   function step() {
     if (!Number.isFinite(M.heading) || !Number.isFinite(M.headingRef)) return;

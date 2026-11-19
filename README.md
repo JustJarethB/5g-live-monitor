@@ -20,8 +20,8 @@ direction you faced when you pressed Start tracking / Reset map. The best square
 2 s of readings) is outlined.
 
 Sideways and backward steps are detected from the phone's acceleration (body acceleration in the
-direction of travel lines up with the rise in vertical acceleration on each step), then sorted into
-forward / right / back / left relative to where the phone points. It calibrates on your first
+direction of travel lines up with the rise in vertical acceleration on each step), giving each
+stride's angle relative to where the phone points, at any angle, not just forward/back/left/right. It calibrates on your first
 8 steps, so walk forward normally right after pressing Start tracking. You can turn this off in Settings.
 
 Traffic goes to Cloudflare's public speed-test endpoints (`speed.cloudflare.com/__down` and `/__up`).
