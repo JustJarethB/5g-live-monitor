@@ -94,15 +94,15 @@
         <div class="label"><span class="sw" style="background:var(--down)"></span>Download</div>
         <div class="big" id="bigDown">–</div>
         <div class="unit">Mbps now</div>
-        <div class="avg"><span class="winLbl">5 min</span> avg <b id="avgDown">–</b></div>
-        <div class="avg sm">peak <span id="peakDown">–</span> · low <span id="lowDown">–</span></div>
+        <div class="avg">10 s avg <b id="avgDown">–</b></div>
+        <div class="avg sm">10 s low <span id="lowDown">–</span></div>
       </div>
       <div class="num" id="numUp" hidden>
         <div class="label"><span class="sw" style="background:var(--up)"></span>Upload</div>
         <div class="big" id="bigUp">–</div>
         <div class="unit">Mbps now</div>
-        <div class="avg"><span class="winLbl">5 min</span> avg <b id="avgUp">–</b></div>
-        <div class="avg sm">peak <span id="peakUp">–</span> · low <span id="lowUp">–</span></div>
+        <div class="avg">10 s avg <b id="avgUp">–</b></div>
+        <div class="avg sm">10 s low <span id="lowUp">–</span></div>
       </div>
     </div>
     <div><span class="pill idle" id="pill">Stopped</span></div>
@@ -265,12 +265,16 @@
     for (const d of DIRS) { const v = pts.map(p => p[d]).filter(Number.isFinite); out[d] = { avg: mean(v), low: pct(v, 0.1), peak: v.length ? Math.max(...v) : NaN }; }
     return out;
   }
+  // last 10 seconds, shown under the live numbers (the graph shows its own window avg/peak)
   function renderAverages() {
-    const st = windowStats(view().pts);
-    document.querySelectorAll('.winLbl').forEach(e => e.textContent = winLabel());
-    $('avgDown').textContent = fmt(st.down.avg); $('lowDown').textContent = fmt(st.down.low);
-    $('avgUp').textContent = fmt(st.up.avg); $('lowUp').textContent = fmt(st.up.low);
-    $('peakDown').textContent = fmt(st.down.peak); $('peakUp').textContent = fmt(st.up.peak);
+    const end = S.points.length ? S.points[S.points.length - 1].t : 0;
+    const recent = S.points.filter(p => p.t > end - 10000);
+    for (const d of DIRS) {
+      const v = recent.map(p => p[d]).filter(Number.isFinite);
+      const id = d === 'down' ? 'Down' : 'Up';
+      $('avg' + id).textContent = fmt(mean(v));
+      $('low' + id).textContent = fmt(v.length ? Math.min(...v) : NaN);
+    }
   }
 
   // ---------- live sampling ----------
