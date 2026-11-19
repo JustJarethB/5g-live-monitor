@@ -40,29 +40,38 @@
   input[type=text] { flex: 1; min-width: 120px; }
   input[type=number] { width: 76px; }
 
-  .hero { text-align: center; padding: 18px 10px 12px; }
-  .hero .label { font-size: 13px; color: var(--text-2); display: inline-flex; gap: 6px; align-items: center; }
-  .hero .big { font-size: 76px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -1px; margin: 6px 0 2px; }
-  .hero .unit { font-size: 18px; color: var(--muted); }
-  .pill { display: inline-block; font-size: 12px; font-weight: 650; padding: 2px 9px; border-radius: 99px; margin-top: 8px; }
+  .hero { text-align: center; padding: 16px 10px 12px; }
+  .nums { display: flex; justify-content: center; gap: 10px; }
+  .num { flex: 1; max-width: 360px; }
+  .num[hidden] { display: none; }
+  .num .label { font-size: 13px; color: var(--text-2); display: inline-flex; gap: 6px; align-items: center; }
+  .num .big { font-size: 76px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -1px; margin: 6px 0 2px; }
+  .both .num .big { font-size: 52px; }
+  .num .unit { font-size: 15px; color: var(--muted); }
+  .num .avg { font-size: 13px; color: var(--text-2); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .num .avg b { color: var(--text); font-size: 15px; }
+  .num .avg.sm { margin-top: 1px; font-size: 12px; color: var(--muted); }
+  .pill { display: inline-block; font-size: 12px; font-weight: 650; padding: 2px 9px; border-radius: 99px; margin-top: 10px; }
   .pill.ok { background: var(--good-bg); color: var(--good-ink); }
   .pill.bad { background: var(--bad-bg); color: var(--bad-ink); }
   .pill.idle { background: var(--grid); color: var(--text-2); }
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 12px; }
   .stat { text-align: center; }
   .stat .k { font-size: 11px; color: var(--text-2); }
   .stat .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
   .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
   .chartwrap { position: relative; }
-  canvas { width: 100%; height: 230px; display: block; touch-action: pan-y; }
+  canvas { width: 100%; height: 240px; display: block; touch-action: pan-y; }
   .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line);
     border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15);
     display: none; white-space: nowrap; font-variant-numeric: tabular-nums; top: 8px; }
-  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); margin: 0 0 6px; flex-wrap: wrap; align-items: center; }
+  .legend { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); margin: 0 0 6px; flex-wrap: wrap; align-items: center; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .legend .grow { flex: 1; }
+  .dash { width: 14px; height: 0; border-top: 2px dashed var(--muted); display: inline-block; }
+  .dash.dot { border-top-style: dotted; }
   h2 { font-size: 14px; margin: 0 0 8px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
   th, td { text-align: right; padding: 7px 5px; border-bottom: 1px solid var(--line); }
@@ -79,22 +88,34 @@
 </head>
 <body>
 <main>
-  <section class="card hero">
-    <div class="label" id="heroLabel"><span class="sw" style="background:var(--down)"></span>Download, live</div>
-    <div class="big" id="big">–</div>
-    <div class="unit">Mbps</div>
+  <section class="card hero" id="hero">
+    <div class="nums">
+      <div class="num" id="numDown">
+        <div class="label"><span class="sw" style="background:var(--down)"></span>Download</div>
+        <div class="big" id="bigDown">–</div>
+        <div class="unit">Mbps now</div>
+        <div class="avg"><span class="winLbl">5 min</span> avg <b id="avgDown">–</b></div>
+        <div class="avg sm">peak <span id="peakDown">–</span> · low <span id="lowDown">–</span></div>
+      </div>
+      <div class="num" id="numUp" hidden>
+        <div class="label"><span class="sw" style="background:var(--up)"></span>Upload</div>
+        <div class="big" id="bigUp">–</div>
+        <div class="unit">Mbps now</div>
+        <div class="avg"><span class="winLbl">5 min</span> avg <b id="avgUp">–</b></div>
+        <div class="avg sm">peak <span id="peakUp">–</span> · low <span id="lowUp">–</span></div>
+      </div>
+    </div>
     <div><span class="pill idle" id="pill">Stopped</span></div>
     <div class="stats">
-      <div class="stat"><div class="k">Avg 10 s</div><div class="v" id="sAvg">–</div></div>
-      <div class="stat"><div class="k">Low 10 s</div><div class="v" id="sMin">–</div></div>
       <div class="stat"><div class="k">Ping</div><div class="v" id="sPing">–</div></div>
       <div class="stat"><div class="k">Data used</div><div class="v" id="sData">0 MB</div></div>
     </div>
     <div class="row" style="justify-content:center; margin-top:14px">
       <button id="startBtn" class="primary">Start</button>
       <div class="seg" role="group" aria-label="Direction">
-        <button id="mDown" aria-pressed="true">Download</button>
-        <button id="mUp" aria-pressed="false">Upload</button>
+        <button data-mode="down" aria-pressed="true">Down</button>
+        <button data-mode="up" aria-pressed="false">Up</button>
+        <button data-mode="both" aria-pressed="false">Both</button>
       </div>
     </div>
     <div class="warn" id="warn"></div>
@@ -102,8 +123,10 @@
 
   <section class="card">
     <div class="legend">
-      <span><i class="sw" style="background:var(--down)"></i>Download</span>
-      <span><i class="sw" style="background:var(--up)"></i>Upload</span>
+      <span><i class="sw" style="background:var(--down)"></i>Down</span>
+      <span><i class="sw" style="background:var(--up)"></i>Up</span>
+      <span><i class="dash"></i>avg</span>
+      <span><i class="dash dot"></i>peak</span>
       <span>┊ spot</span>
       <span class="grow"></span>
       <div class="seg" role="group" aria-label="Time window">
@@ -124,7 +147,7 @@
       <input id="spotInput" type="text" placeholder="e.g. Landing window">
       <button id="spotBtn">Mark spot</button>
     </div>
-    <div id="spotTable" style="margin-top:10px"><div class="empty">No spots marked yet. The monitor runs without them.</div></div>
+    <div id="spotTable" style="margin-top:10px"></div>
     <div class="row" style="margin-top:10px">
       <button id="csvBtn">Download CSV</button>
       <button id="clearBtn">Clear history</button>
@@ -135,10 +158,11 @@
     <details>
       <summary>Settings</summary>
       <div class="settings">
-        <label>Parallel connections <input id="optStreams" type="number" min="1" max="8" value="4"></label>
+        <label>Connections per direction <input id="optStreams" type="number" min="1" max="8" value="4"></label>
         <label>Smoothing <input id="optSmooth" type="number" min="0.5" max="10" step="0.5" value="2"> s</label>
         <label>Auto-stop after <input id="optCap" type="number" min="0" step="0.5" value="10"> GB (0 = never)</label>
         <p class="hint">This keeps the connection busy all the time, so it uses data at your full speed: roughly 2 GB a minute at 300 Mbps. The auto-stop protects capped plans.</p>
+        <p class="hint">In Both mode, download and upload run at the same time and share the radio link, so each can read a little lower than when tested alone.</p>
       </div>
     </details>
   </section>
@@ -148,44 +172,54 @@
 (() => {
   const $ = id => document.getElementById(id);
   const BASE = 'https://speed.cloudflare.com';
-  const TICK = 250;          // ms between live updates
+  const TICK = 250;
+  const DIRS = ['down', 'up'];
   const S = {
     running: false, mode: 'down', win: 300,
-    bytes: 0, bytesUsed: 0,
-    hist: [],                // {t, b} cumulative bytes, for the sliding rate
+    bytes: { down: 0, up: 0 }, lastData: { down: 0, up: 0 }, bytesUsed: 0,
+    hist: [],                // {t, down, up} cumulative bytes
     points: [],              // {t, down, up, ping, spot}
-    marks: [],               // {t, spot}
-    spot: null, ping: NaN, lastData: 0, lastErr: '', ctrl: null, wake: null, hover: null
+    marks: [],
+    spot: null, ping: NaN, lastErr: '', ctrl: null, wake: null, hover: null
   };
   try { const sv = JSON.parse(localStorage.getItem('5glive') || 'null');
-    if (sv) { S.points = sv.points || []; S.marks = sv.marks || []; S.bytesUsed = sv.bytesUsed || 0; S.spot = sv.spot || null; } } catch (e) {}
-  const save = () => { try { localStorage.setItem('5glive', JSON.stringify({ points: S.points.slice(-20000), marks: S.marks, bytesUsed: S.bytesUsed, spot: S.spot })); } catch (e) {} };
+    if (sv) { S.points = sv.points || []; S.marks = sv.marks || []; S.bytesUsed = sv.bytesUsed || 0; S.spot = sv.spot || null;
+      if (['down', 'up', 'both'].includes(sv.mode)) S.mode = sv.mode; if ([60, 300, 1800].includes(sv.win)) S.win = sv.win; } } catch (e) {}
+  const save = () => { try { localStorage.setItem('5glive', JSON.stringify({ points: S.points.slice(-20000), marks: S.marks,
+    bytesUsed: S.bytesUsed, spot: S.spot, mode: S.mode, win: S.win })); } catch (e) {} };
 
   const opt = () => ({
     streams: Math.min(8, Math.max(1, +$('optStreams').value || 4)),
     smooth: Math.min(10, Math.max(0.5, +$('optSmooth').value || 2)),
     capGB: Math.max(0, +$('optCap').value || 0)
   });
+  const active = () => S.mode === 'both' ? DIRS : [S.mode];
   const fmt = v => !Number.isFinite(v) ? '–' : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const median = a => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
+  const pct = (a, p) => { if (!a.length) return NaN; const s = [...a].sort((x, y) => x - y); return s[Math.floor((s.length - 1) * p)]; };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const dataStr = b => b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : (b / 1e6).toFixed(0) + ' MB';
+  const winLabel = () => S.win >= 1800 ? '30 min' : S.win >= 300 ? '5 min' : '1 min';
+  const errText = (e, r) => r && r.status === 429 ? 'test server is rate-limiting (429), try again later'
+    : r ? 'test server returned ' + r.status : e && e.name === 'TypeError' ? "can't reach the test server" : (e && e.message) || 'error';
 
-  // ---------- traffic generators (run until stopped) ----------
+  // ---------- traffic generators ----------
   async function downStream(signal) {
     while (!signal.aborted) {
+      let r = null;
       try {
-        const r = await fetch(`${BASE}/__down?bytes=100000000&r=${Math.random()}`, { cache: 'no-store', signal });
-        if (!r.ok) throw new Error(r.status === 429 ? 'test server is rate-limiting (429), try again later' : 'test server returned ' + r.status);
+        r = await fetch(`${BASE}/__down?bytes=100000000&r=${Math.random()}`, { cache: 'no-store', signal });
+        if (!r.ok) throw new Error('http');
         S.lastErr = '';
         const rd = r.body.getReader();
         for (;;) {
           const { done, value } = await rd.read();
           if (done) break;
-          S.bytes += value.length; S.bytesUsed += value.length; S.lastData = performance.now();
+          S.bytes.down += value.length; S.bytesUsed += value.length; S.lastData.down = performance.now();
         }
-      } catch (e) { if (signal.aborted) return; S.lastErr = e.message === 'Failed to fetch' || e.name === 'TypeError' ? 'can\'t reach the test server' : e.message; await sleep(1000); }
+      } catch (e) { if (signal.aborted) return; S.lastErr = errText(e, r && !r.ok ? r : null); await sleep(1000); }
     }
   }
   let payload = null;
@@ -198,12 +232,13 @@
   async function upStream(signal) {
     const p = getPayload();
     while (!signal.aborted) {
+      let r = null;
       try {
-        const r = await fetch(`${BASE}/__up?r=${Math.random()}`, { method: 'POST', body: p, cache: 'no-store', signal });
+        r = await fetch(`${BASE}/__up?r=${Math.random()}`, { method: 'POST', body: p, cache: 'no-store', signal });
         await r.arrayBuffer();
-        if (!r.ok) throw new Error(r.status === 429 ? 'test server is rate-limiting (429), try again later' : 'test server returned ' + r.status);
-        S.lastErr = ''; S.bytes += p.size; S.bytesUsed += p.size; S.lastData = performance.now();
-      } catch (e) { if (signal.aborted) return; S.lastErr = e.name === 'TypeError' ? 'can\'t reach the test server' : e.message; await sleep(1000); }
+        if (!r.ok) throw new Error('http');
+        S.lastErr = ''; S.bytes.up += p.size; S.bytesUsed += p.size; S.lastData.up = performance.now();
+      } catch (e) { if (signal.aborted) return; S.lastErr = errText(e, r && !r.ok ? r : null); await sleep(1000); }
     }
   }
   async function pinger(signal) {
@@ -219,34 +254,48 @@
     }
   }
 
+  // ---------- window stats (what the graph is showing) ----------
+  function view() {
+    const tEnd = S.running ? Date.now() : (S.points.length ? S.points[S.points.length - 1].t : Date.now());
+    const tStart = tEnd - S.win * 1000;
+    return { tStart, tEnd, pts: S.points.filter(p => p.t >= tStart && p.t <= tEnd) };
+  }
+  function windowStats(pts) {
+    const out = {};
+    for (const d of DIRS) { const v = pts.map(p => p[d]).filter(Number.isFinite); out[d] = { avg: mean(v), low: pct(v, 0.1), peak: v.length ? Math.max(...v) : NaN }; }
+    return out;
+  }
+  function renderAverages() {
+    const st = windowStats(view().pts);
+    document.querySelectorAll('.winLbl').forEach(e => e.textContent = winLabel());
+    $('avgDown').textContent = fmt(st.down.avg); $('lowDown').textContent = fmt(st.down.low);
+    $('avgUp').textContent = fmt(st.up.avg); $('lowUp').textContent = fmt(st.up.low);
+    $('peakDown').textContent = fmt(st.down.peak); $('peakUp').textContent = fmt(st.up.peak);
+  }
+
   // ---------- live sampling ----------
   let tickTimer = null, lastPointT = 0;
   function tick() {
     const now = performance.now(), o = opt();
-    S.hist.push({ t: now, b: S.bytes });
-    while (S.hist.length && now - S.hist[0].t > o.smooth * 1000 + 50) S.hist.shift();
-    const first = S.hist[0];
-    const dt = (now - first.t) / 1000;
-    const rate = dt > 0.2 ? ((S.bytes - first.b) * 8) / dt / 1e6 : NaN;
-    const stalled = now - S.lastData > 3000;
+    S.hist.push({ t: now, down: S.bytes.down, up: S.bytes.up });
+    while (S.hist.length > 1 && now - S.hist[0].t > o.smooth * 1000 + 50) S.hist.shift();
+    const first = S.hist[0], dt = (now - first.t) / 1000;
+    const rate = {};
+    for (const d of DIRS) rate[d] = active().includes(d) && dt > 0.2 ? ((S.bytes[d] - first[d]) * 8) / dt / 1e6 : NaN;
 
-    $('big').textContent = fmt(rate);
+    $('bigDown').textContent = fmt(rate.down); $('bigUp').textContent = fmt(rate.up);
     $('sPing').textContent = Number.isFinite(S.ping) ? S.ping.toFixed(0) + ' ms' : '–';
     $('sData').textContent = dataStr(S.bytesUsed);
+    const stalled = active().some(d => now - S.lastData[d] > 3000);
     const pill = $('pill');
     if (stalled) { pill.className = 'pill bad'; pill.textContent = 'No data flowing' + (S.lastErr ? ': ' + S.lastErr : ''); }
     else { pill.className = 'pill ok'; pill.textContent = S.spot ? `Live · ${S.spot}` : 'Live'; }
 
-    // record a chart point every 500 ms
-    if (now - lastPointT >= 500 && Number.isFinite(rate)) {
+    if (now - lastPointT >= 500 && active().some(d => Number.isFinite(rate[d]))) {
       lastPointT = now;
-      S.points.push({ t: Date.now(), down: S.mode === 'down' ? rate : NaN, up: S.mode === 'up' ? rate : NaN,
-        ping: S.ping, spot: S.spot });
+      S.points.push({ t: Date.now(), down: rate.down, up: rate.up, ping: S.ping, spot: S.spot });
       if (S.points.length % 4 === 0) { renderTable(); if (S.points.length % 20 === 0) save(); }
-      const recent = S.points.filter(p => p.t > Date.now() - 10000).map(p => p[S.mode]).filter(Number.isFinite);
-      $('sAvg').textContent = fmt(recent.reduce((a, b) => a + b, 0) / (recent.length || NaN));
-      $('sMin').textContent = fmt(recent.length ? Math.min(...recent) : NaN);
-      draw();
+      renderAverages(); draw();
     }
     const cap = o.capGB;
     if (cap && S.bytesUsed >= cap * 1e9) {
@@ -260,10 +309,11 @@
     if (S.running) return;
     S.running = true; $('warn').style.display = 'none';
     S.ctrl = new AbortController();
-    S.bytes = 0; S.hist = []; S.lastData = performance.now(); S.ping = NaN; S.lastErr = '';
+    S.bytes = { down: 0, up: 0 }; S.hist = []; S.ping = NaN; S.lastErr = '';
+    const t = performance.now(); S.lastData = { down: t, up: t };
     $('startBtn').textContent = 'Stop';
     const n = opt().streams;
-    for (let i = 0; i < n; i++) (S.mode === 'down' ? downStream : upStream)(S.ctrl.signal);
+    for (const d of active()) for (let i = 0; i < n; i++) (d === 'down' ? downStream : upStream)(S.ctrl.signal);
     pinger(S.ctrl.signal);
     tickTimer = setInterval(tick, TICK);
     try { if ('wakeLock' in navigator) S.wake = await navigator.wakeLock.request('screen'); } catch (e) {}
@@ -273,17 +323,20 @@
     S.running = false; S.ctrl.abort(); clearInterval(tickTimer);
     $('startBtn').textContent = 'Start';
     const pill = $('pill'); pill.className = 'pill idle'; pill.textContent = 'Stopped';
+    $('bigDown').textContent = '–'; $('bigUp').textContent = '–';
     try { S.wake && S.wake.release(); } catch (e) {} S.wake = null;
-    save(); renderTable(); draw();
+    save(); renderTable(); renderAverages(); draw();
+  }
+  function applyMode() {
+    document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === S.mode));
+    $('numDown').hidden = !active().includes('down');
+    $('numUp').hidden = !active().includes('up');
+    $('hero').classList.toggle('both', S.mode === 'both');
   }
   function setMode(m) {
     if (m === S.mode) return;
     const was = S.running; if (was) stop();
-    S.mode = m;
-    $('mDown').setAttribute('aria-pressed', m === 'down'); $('mUp').setAttribute('aria-pressed', m === 'up');
-    $('heroLabel').innerHTML = `<span class="sw" style="background:var(--${m})"></span>${m === 'down' ? 'Download' : 'Upload'}, live`;
-    $('big').textContent = '–'; $('sAvg').textContent = '–'; $('sMin').textContent = '–';
-    renderTable();
+    S.mode = m; applyMode(); save(); renderTable();
     if (was) start();
   }
   document.addEventListener('visibilitychange', async () => {
@@ -299,26 +352,28 @@
     save(); renderTable(); draw();
   }
   function renderTable() {
-    const key = S.mode, groups = new Map();
+    const groups = new Map();
     for (const p of S.points) {
-      if (!p.spot || !Number.isFinite(p[key])) continue;
+      if (!p.spot || !(Number.isFinite(p.down) || Number.isFinite(p.up))) continue;
       if (!groups.has(p.spot)) groups.set(p.spot, []);
       groups.get(p.spot).push(p);
     }
     if (!groups.size) { $('spotTable').innerHTML = '<div class="empty">No spots marked yet. The monitor runs without them.</div>'; return; }
     const rows = [...groups.entries()].map(([spot, arr]) => {
-      const v = arr.map(p => p[key]).sort((a, b) => a - b);
-      return { spot, secs: arr.length / 2, med: median(v), low: v[Math.floor(v.length * 0.1)],
+      const dv = arr.map(p => p.down).filter(Number.isFinite), uv = arr.map(p => p.up).filter(Number.isFinite);
+      return { spot, secs: arr.length / 2, down: median(dv), up: median(uv), downLow: pct(dv, 0.1),
         ping: median(arr.map(p => p.ping).filter(Number.isFinite)) };
-    }).sort((a, b) => b.med - a.med);
-    const best = rows.find(r => r.secs >= 30);
-    let h = `<table><thead><tr><th>Spot</th><th>Time</th><th>Typical</th><th>Low (10%)</th><th>Ping</th></tr></thead><tbody>`;
+    });
+    const key = rows.some(r => Number.isFinite(r.down)) ? 'down' : 'up';
+    rows.sort((a, b) => (Number.isFinite(b[key]) ? b[key] : -1) - (Number.isFinite(a[key]) ? a[key] : -1));
+    const best = rows.find(r => r.secs >= 30 && Number.isFinite(r[key]));
+    let h = `<table><thead><tr><th>Spot</th><th>Time</th><th>Down</th><th>Down low</th><th>Up</th><th>Ping</th></tr></thead><tbody>`;
     for (const r of rows) {
       const t = r.secs >= 60 ? `${Math.floor(r.secs / 60)}m ${Math.round(r.secs % 60)}s` : `${Math.round(r.secs)}s`;
       h += `<tr><td>${esc(r.spot)}${rows.length > 1 && r === best ? '<span class="badge">BEST</span>' : ''}${r.spot === S.spot && S.running ? ' <span style="color:var(--muted)">●</span>' : ''}</td>
-        <td>${t}</td><td>${fmt(r.med)}</td><td>${fmt(r.low)}</td><td>${fmt(r.ping)}</td></tr>`;
+        <td>${t}</td><td>${fmt(r.down)}</td><td>${fmt(r.downLow)}</td><td>${fmt(r.up)}</td><td>${fmt(r.ping)}</td></tr>`;
     }
-    $('spotTable').innerHTML = h + `</tbody></table><p class="hint">${key === 'down' ? 'Download' : 'Upload'} Mbps while at each spot. Needs 30 s at a spot to be marked best.</p>`;
+    $('spotTable').innerHTML = h + `</tbody></table><p class="hint">Typical (median) Mbps while at each spot; "low" is the slowest 10%. Ranked by ${key === 'down' ? 'download' : 'upload'}; needs 30 s at a spot to be marked best.</p>`;
   }
 
   // ---------- chart ----------
@@ -326,11 +381,6 @@
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const PAD = { l: 40, r: 8, t: 20, b: 20 };
   function niceMax(v) { if (!(v > 0)) return 10; const p = 10 ** Math.floor(Math.log10(v)); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; }
-  function view() {
-    const tEnd = S.running ? Date.now() : (S.points.length ? S.points[S.points.length - 1].t : Date.now());
-    const tStart = tEnd - S.win * 1000;
-    return { tStart, tEnd, pts: S.points.filter(p => p.t >= tStart) };
-  }
   function draw() {
     const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
@@ -363,7 +413,8 @@
       ctx.textAlign = 'center'; ctx.fillStyle = css('--muted'); ctx.textBaseline = 'middle';
       ctx.fillText('Press Start to begin monitoring', PAD.l + pw / 2, PAD.t + ph / 2);
     }
-    for (const key of ['down', 'up']) {
+    // series
+    for (const key of DIRS) {
       ctx.strokeStyle = css('--' + key); ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.beginPath();
       let pen = false, prevT = 0;
       for (const p of pts) {
@@ -374,17 +425,37 @@
       }
       ctx.stroke();
     }
-    if (S.hover) {
+    // window average (dashed) and peak (dotted) in series colour, labelled at the right edge
+    const st = windowStats(pts), labels = [];
+    for (const key of DIRS) for (const [stat, dash, name] of [['peak', [2, 3], 'peak'], ['avg', [7, 4], 'avg']]) {
+      const a = st[key][stat]; if (!Number.isFinite(a)) continue;
+      const yy = Math.round(y(a)) + .5;
+      ctx.setLineDash(dash); ctx.strokeStyle = css('--' + key); ctx.lineWidth = stat === 'avg' ? 2 : 1.5;
+      ctx.beginPath(); ctx.moveTo(PAD.l, yy); ctx.lineTo(W - PAD.r, yy); ctx.stroke();
+      labels.push({ y: yy, text: `${name} ${fmt(a)}`, key });
+    }
+    ctx.setLineDash([]);
+    labels.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 15) labels[i].y = labels[i - 1].y + 15;
+    ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    for (const l of labels) {
+      const tw = ctx.measureText(l.text).width, lx = W - PAD.r - 2, ly = Math.max(PAD.t + 13, l.y - 3);
+      ctx.fillStyle = css('--surface'); ctx.fillRect(lx - tw - 4, ly - 13, tw + 6, 14);
+      ctx.fillStyle = css('--text'); ctx.fillText(l.text, lx, ly);
+      ctx.fillStyle = css('--' + l.key); ctx.fillRect(lx - tw - 10, ly - 9, 5, 5);
+    }
+    ctx.font = '11px system-ui, sans-serif';
+    // hover
+    if (S.hover && S.hover.t >= tStart) {
       const p = S.hover, xx = Math.round(x(p.t)) + .5;
       ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xx, PAD.t); ctx.lineTo(xx, PAD.t + ph); ctx.stroke();
-      for (const key of ['down', 'up']) if (Number.isFinite(p[key])) {
+      for (const key of DIRS) if (Number.isFinite(p[key])) {
         ctx.beginPath(); ctx.arc(x(p.t), y(p[key]), 4.5, 0, Math.PI * 2); ctx.fillStyle = css('--' + key); ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = css('--surface'); ctx.stroke();
       }
     }
     ctx.fillStyle = css('--muted'); ctx.textBaseline = 'top';
-    const lbl = S.win >= 1800 ? '30 min ago' : S.win >= 300 ? '5 min ago' : '1 min ago';
-    ctx.textAlign = 'left'; ctx.fillText(lbl, PAD.l, PAD.t + ph + 5);
+    ctx.textAlign = 'left'; ctx.fillText(winLabel() + ' ago', PAD.l, PAD.t + ph + 5);
     ctx.textAlign = 'right'; ctx.fillText(S.running ? 'now' : new Date(tEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), W - PAD.r, PAD.t + ph + 5);
   }
   function hoverAt(cx) {
@@ -393,10 +464,12 @@
     const t = tStart + ((cx - rect.left - PAD.l) / pw) * (tEnd - tStart);
     let best = pts[0]; for (const p of pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
     S.hover = best; draw();
-    const tip = $('tip'), v = Number.isFinite(best.down) ? best.down : best.up, k = Number.isFinite(best.down) ? 'down' : 'up';
-    tip.innerHTML = `${new Date(best.t).toLocaleTimeString()}${best.spot ? ' · <b>' + esc(best.spot) + '</b>' : ''}<br>
-      <span class="sw" style="background:var(--${k})"></span> ${k === 'down' ? 'Down' : 'Up'} ${fmt(v)} Mbps · Ping ${fmt(best.ping)} ms`;
-    tip.style.display = 'block';
+    const tip = $('tip');
+    let h = `${new Date(best.t).toLocaleTimeString()}${best.spot ? ' · <b>' + esc(best.spot) + '</b>' : ''}`;
+    if (Number.isFinite(best.down)) h += `<br><span class="sw" style="background:var(--down)"></span> Down ${fmt(best.down)} Mbps`;
+    if (Number.isFinite(best.up)) h += `<br><span class="sw" style="background:var(--up)"></span> Up ${fmt(best.up)} Mbps`;
+    h += `<br>Ping ${fmt(best.ping)} ms`;
+    tip.innerHTML = h; tip.style.display = 'block';
     const px = PAD.l + ((best.t - tStart) / (tEnd - tStart)) * pw, tw = tip.offsetWidth;
     tip.style.left = Math.max(0, Math.min(rect.width - tw, px + 12 + tw > rect.width ? px - tw - 12 : px + 12)) + 'px';
   }
@@ -408,13 +481,9 @@
 
   // ---------- controls ----------
   $('startBtn').onclick = () => S.running ? stop() : start();
-  $('mDown').onclick = () => setMode('down');
-  $('mUp').onclick = () => setMode('up');
-  document.querySelectorAll('[data-win]').forEach(b => b.onclick = () => {
-    S.win = +b.dataset.win;
-    document.querySelectorAll('[data-win]').forEach(o => o.setAttribute('aria-pressed', o === b));
-    draw();
-  });
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  const applyWin = () => document.querySelectorAll('[data-win]').forEach(o => o.setAttribute('aria-pressed', +o.dataset.win === S.win));
+  document.querySelectorAll('[data-win]').forEach(b => b.onclick = () => { S.win = +b.dataset.win; applyWin(); save(); renderAverages(); draw(); });
   $('spotBtn').onclick = markSpot;
   $('spotInput').addEventListener('keydown', e => { if (e.key === 'Enter') markSpot(); });
   $('csvBtn').onclick = () => {
@@ -432,11 +501,12 @@
     armed = false; $('clearBtn').textContent = 'Clear history';
     S.points = []; S.marks = []; S.bytesUsed = 0; S.spot = null; S.hover = null;
     $('sData').textContent = '0 MB'; $('warn').style.display = 'none';
-    save(); renderTable(); draw();
+    save(); renderTable(); renderAverages(); draw();
   };
 
+  applyMode(); applyWin();
   $('sData').textContent = dataStr(S.bytesUsed);
-  renderTable(); draw();
+  renderTable(); renderAverages(); draw();
 })();
 </script>
 </body>
