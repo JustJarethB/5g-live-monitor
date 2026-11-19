@@ -4,7 +4,7 @@
 
 A single-page, always-on network speed monitor for finding the best spot for a 5G router.
 Open it on a phone with Wi-Fi off, press **Start**, and walk around.
-Pick **Down**, **Up** or **Both**. The big number updates
+Pick **Down**, **Both** or **Up**. The big number updates
 4× a second (2-second rolling average) and a rolling graph shows the last 1, 5 or 30 minutes,
 with dashed average and dotted peak lines for the visible window.
 You can optionally tag spots to get a per-spot comparison table, and export a CSV.
