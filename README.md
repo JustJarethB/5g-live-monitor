@@ -19,6 +19,11 @@ of the distance walked; walk back to the start point to see how far it has drift
 direction you faced when you pressed Start tracking / Reset map. The best square (at least
 2 s of readings) is outlined.
 
+Sideways and backward steps are detected from the phone's acceleration (body acceleration in the
+direction of travel lines up with the rise in vertical acceleration on each step), then sorted into
+forward / right / back / left relative to where the phone points. It calibrates on your first
+8 steps, so walk forward normally right after pressing Start tracking. You can turn this off in Settings.
+
 Traffic goes to Cloudflare's public speed-test endpoints (`speed.cloudflare.com/__down` and `/__up`).
 
 **Data use:** it keeps the link saturated, so it uses data at full line rate (about 2 GB/min at 300 Mbps).
