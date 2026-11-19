@@ -558,9 +558,9 @@
     heading: NaN, headingRef: NaN, needRef: true, frameStale: false,
     hist: [{ t: Date.now(), x: 0, y: 0 }], lastPos: null,
     cells: new Map(), path: [{ x: 0, y: 0 }],
-    g: [0, 0, 0], gInit: false, vs: 0, armed: true, lastStepT: 0,
-    R: null, accSign: 1, eb: null, ls: null, prevZ: null, lastT: 0, dirAcc: [0, 0, 0], prevAcc: [0, 0, 0],
-    cal: { n: 0, x: 0, y: 0, offset: 0 }, lastDir: '', lastRel: 0, lastRelT: 0,
+    g: [0, 0, 0], gInit: false, vs: 0, armed: true, lastPeakT: -1e9, walking: false, signVote: 0,
+    R: null, eb: null, ls: null, prevZ: null, lastT: 0, dirAcc: [0, 0, 0], prevAcc: [0, 0, 0],
+    cal: { n: 0, s: 0, sign: 1 }, lastDir: '', lastWorld: 0, lastDirT: 0,
     gotMotion: false, gotOrient: false, hover: null
   };
   const fmt = v => !Number.isFinite(v) ? '–' : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
@@ -612,35 +612,53 @@
     const v = [a.x, a.y, a.z];
     if (!M.gInit) { M.g = v.slice(); M.gInit = true; return; }
     for (let i = 0; i < 3; i++) M.g[i] += 0.02 * (v[i] - M.g[i]);
-    const gm = Math.hypot(M.g[0], M.g[1], M.g[2]) || 1;
-    const vert = ((v[0] - M.g[0]) * M.g[0] + (v[1] - M.g[1]) * M.g[1] + (v[2] - M.g[2]) * M.g[2]) / gm;
-    M.vs += 0.3 * (vert - M.vs);
     const now = performance.now();
-    trackDirection(v, now);
-    if (M.armed && M.vs > 0.9 && now - M.lastStepT > 280) { M.armed = false; M.lastStepT = now; step(); }
-    else if (!M.armed && M.vs < -0.3) M.armed = true;
+    // Vertical acceleration in room coordinates, using the phone's full 3D orientation, so tilting
+    // or turning the phone doesn't leak gravity into it. Falls back to a gravity estimate only
+    // if the browser gives no orientation.
+    let vert = worldMotion(v, now);
+    if (vert === undefined) {
+      const gm = Math.hypot(M.g[0], M.g[1], M.g[2]) || 1;
+      const raw = ((v[0] - M.g[0]) * M.g[0] + (v[1] - M.g[1]) * M.g[1] + (v[2] - M.g[2]) * M.g[2]) / gm;
+      M.vs += 0.3 * (raw - M.vs); vert = M.vs;
+    }
+    if (M.armed && vert > 0.9 && now - M.lastPeakT > 250) { M.armed = false; stepCandidate(now); }
+    else if (!M.armed && vert < -0.3) M.armed = true;
+  }
+
+  // A bump only counts as a step when it's part of a walking rhythm (another bump 0.25-1.3 s away).
+  // Lifting, lowering or flicking the phone gives one isolated bump, which is ignored.
+  function stepCandidate(now) {
+    const gap = now - M.lastPeakT; M.lastPeakT = now;
+    if (gap >= 250 && gap <= 1300) {
+      if (!M.walking) { M.walking = true; step(); }   // the bump that started this walk
+      step();
+    } else {
+      M.walking = false;                              // possible first step: wait for the next one
+      M.dirAcc = [0, 0, 0]; M.prevAcc = [0, 0, 0];
+    }
   }
 
   // ---- Which way was the step? ----
   // Walking works like an inverted pendulum: the body speeds up in the direction of travel while
   // vertical acceleration is rising. So summing (horizontal acceleration × rate of change of
-  // vertical acceleration) over a stride gives a vector pointing the way you moved, whichever
-  // way the phone faces. That direction is sorted into forward/right/back/left relative to the
-  // phone, then the phone's (much steadier) heading is used for the exact angle.
-  function trackDirection(v, now) {
-    const R = M.R; if (!R) return;
-    // Some browsers report acceleration with the opposite sign: check against "up" from orientation.
+  // vertical acceleration) over a stride gives a vector pointing the way you moved. Everything is
+  // in room coordinates, so it doesn't matter how the phone is held, tilted or turned.
+  function worldMotion(v, now) {
+    const R = M.R; if (!R) return undefined;
+    // Some browsers report acceleration with the opposite sign: vote against "up" from orientation.
     const upDot = M.g[0] * R[6] + M.g[1] * R[7] + M.g[2] * R[8];
-    if (Math.abs(upDot) > 5) M.accSign = upDot >= 0 ? 1 : -1;
-    const s = M.accSign;
+    if (Math.abs(upDot) > 5) M.signVote = Math.max(-50, Math.min(50, M.signVote + (upDot > 0 ? 1 : -1)));
+    const s = M.signVote >= 0 ? 1 : -1;
     const ax = v[0] * s, ay = v[1] * s, az = v[2] * s;
     const e = [R[0] * ax + R[1] * ay + R[2] * az, R[3] * ax + R[4] * ay + R[5] * az, R[6] * ax + R[7] * ay + R[8] * az];
-    if (!M.eb) { M.eb = e.slice(); M.ls = [0, 0, 0]; M.lastT = now; return; }
+    if (!M.eb) { M.eb = [0, 0, e[2]]; M.ls = [0, 0, 0]; M.lastT = now; return 0; }
     for (let i = 0; i < 3; i++) { M.eb[i] += 0.02 * (e[i] - M.eb[i]); M.ls[i] += 0.3 * ((e[i] - M.eb[i]) - M.ls[i]); }
     const dt = Math.max(0.005, Math.min(0.1, (now - M.lastT) / 1000)); M.lastT = now;
     const dz = (M.ls[2] - (M.prevZ ?? M.ls[2])) / dt; M.prevZ = M.ls[2];
     M.dirAcc[0] += M.ls[0] * dz * dt; M.dirAcc[1] += M.ls[1] * dz * dt;
     M.dirAcc[2] += Math.hypot(M.ls[0], M.ls[1]) * Math.abs(dz) * dt;
+    return M.ls[2];
   }
   const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
   const dirLabel = d => {
@@ -648,32 +666,33 @@
     return deg <= 10 ? 'straight ahead' : deg >= 170 ? 'straight back' : `${deg}° ${d > 0 ? 'right' : 'left'} of facing`;
   };
   const CAL_STEPS = 8;
-  // Returns the step's movement angle relative to the phone's heading (radians, clockwise positive).
-  function stepOffset() {
+  // Returns the direction this step moved, in room coordinates (radians, clockwise positive).
+  function stepDirection() {
     const cur = M.dirAcc; M.dirAcc = [0, 0, 0];
     const win = [cur[0] + M.prevAcc[0], cur[1] + M.prevAcc[1], cur[2] + M.prevAcc[2]];   // two steps = one stride
     M.prevAcc = cur;
-    if (!$('optSide').checked || !Number.isFinite(M.heading)) { M.lastDir = 'forward'; return 0; }
+    const facing = M.heading;
+    if (!$('optSide').checked) { M.lastDir = 'straight ahead'; return facing; }
     const conf = win[2] > 0 ? Math.hypot(win[0], win[1]) / win[2] : 0;
     if (conf < 0.2) {                              // weak signal: keep the last confident direction briefly
-      const recent = performance.now() - M.lastRelT < 2000;
-      M.lastDir = (recent ? dirLabel(M.lastRel) : 'straight ahead') + ' (unsure)';
-      return recent ? M.lastRel : 0;
+      const recent = performance.now() - M.lastDirT < 2000;
+      M.lastDir = (recent ? dirLabel(wrap(M.lastWorld - facing)) : 'straight ahead') + ' (unsure)';
+      return recent ? M.lastWorld : facing;
     }
-    const rel = wrap(Math.atan2(win[0], win[1]) - M.heading);
-    if (M.cal.n < CAL_STEPS) {                     // learn this phone's bias from normal forward walking
-      M.cal.x += Math.sin(rel); M.cal.y += Math.cos(rel); M.cal.n++;
-      if (M.cal.n === CAL_STEPS) M.cal.offset = Math.atan2(M.cal.x, M.cal.y);
-      M.lastDir = 'forward (calibrating)'; return 0;
+    let dir = Math.atan2(win[0], win[1]);
+    if (M.cal.n < CAL_STEPS) {                     // confirm which way round this phone's readings are
+      M.cal.s += Math.cos(wrap(dir - facing)); M.cal.n++;
+      if (M.cal.n === CAL_STEPS) M.cal.sign = M.cal.s >= 0 ? 1 : -1;
+      M.lastDir = 'straight ahead (calibrating)'; return facing;
     }
-    const d = wrap(rel - M.cal.offset);
-    M.lastRel = d; M.lastRelT = performance.now();
-    M.lastDir = dirLabel(d);
-    return d;
+    if (M.cal.sign < 0) dir = wrap(dir + Math.PI);
+    M.lastWorld = dir; M.lastDirT = performance.now();
+    M.lastDir = dirLabel(wrap(dir - facing));
+    return dir;
   }
   function step() {
     if (!Number.isFinite(M.heading) || !Number.isFinite(M.headingRef)) return;
-    const L = stepLen(), h = M.heading + stepOffset() - M.headingRef;
+    const L = stepLen(), h = stepDirection() - M.headingRef;
     M.x += L * Math.sin(h); M.y += L * Math.cos(h);
     M.steps++; M.dist += L;
     M.hist.push({ t: Date.now(), x: M.x, y: M.y });
@@ -744,7 +763,8 @@
     } catch (e) { status('Couldn\'t get motion access: ' + (e.message || e)); return; }
     if (M.frameStale) resetMap();
     M.gInit = false; M.needRef = !Number.isFinite(M.headingRef); M.lastPos = null;
-    M.eb = null; M.prevZ = null; M.dirAcc = [0, 0, 0]; M.prevAcc = [0, 0, 0]; M.cal = { n: 0, x: 0, y: 0, offset: 0 }; M.lastDir = '';
+    M.eb = null; M.prevZ = null; M.dirAcc = [0, 0, 0]; M.prevAcc = [0, 0, 0]; M.cal = { n: 0, s: 0, sign: 1 }; M.lastDir = '';
+    M.walking = false; M.lastPeakT = -1e9; M.signVote = 0;
     M.hist.push({ t: Date.now(), x: M.x, y: M.y });
     addEventListener('devicemotion', onMotion); addEventListener('deviceorientation', onOrient);
     M.tracking = true; $('mapTrackBtn').textContent = 'Stop tracking'; status();

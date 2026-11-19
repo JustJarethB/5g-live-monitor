@@ -19,10 +19,13 @@ of the distance walked; walk back to the start point to see how far it has drift
 direction you faced when you pressed Start tracking / Reset map. The best square (at least
 2 s of readings) is outlined.
 
-Sideways and backward steps are detected from the phone's acceleration (body acceleration in the
-direction of travel lines up with the rise in vertical acceleration on each step), giving each
-stride's angle relative to where the phone points, at any angle, not just forward/back/left/right. It calibrates on your first
-8 steps, so walk forward normally right after pressing Start tracking. You can turn this off in Settings.
+Step direction is measured in room coordinates using the phone's full 3D orientation: body
+acceleration in the direction of travel lines up with the rise in vertical acceleration on each
+step, so each stride gives a direction at any angle, however the phone is held, tilted or turned.
+Steps are found from true vertical acceleration (again via 3D orientation), and a bump only counts
+when it's part of a walking rhythm, so lifting, lowering or tilting the phone doesn't add steps.
+The first 8 steps confirm which way round the phone's sensor readings are, so walk forward normally
+right after pressing Start tracking. Direction detection can be turned off in Settings.
 
 Traffic goes to Cloudflare's public speed-test endpoints (`speed.cloudflare.com/__down` and `/__up`).
 
