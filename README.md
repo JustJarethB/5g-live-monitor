@@ -11,26 +11,21 @@ You can optionally tag spots to get a per-spot comparison table, and export a CS
 
 ### Floor map (beta, opt-in)
 
-Turn on **Floor map** in Settings to place readings on a 2D heatmap of 25 cm squares as you walk.
-It works on iPhone and Android, using step counting from the accelerometer and the phone's
-orientation sensors (iPhone will ask for Motion & Orientation access). Set your step length
-in Settings for best results. Because it's dead reckoning, position drifts by roughly 5–10%
-of the distance walked; walk back to the start point to see how far it has drifted. Up on the map is the
-direction you faced when you pressed Start tracking / Reset map. The best square (at least
-2 s of readings) is outlined.
+Turn on **Floor map** in Settings to place readings on a 2D heatmap of 25 cm squares.
+It tracks the phone's own position using the motion and orientation sensors (iPhone will ask
+for Motion & Orientation access); up on the map is the way the phone faced when tracking started.
 
-Step direction is measured in room coordinates using the phone's full 3D orientation: body
-acceleration in the direction of travel lines up with the rise in vertical acceleration on each
-step, so each stride gives a direction at any angle, however the phone is held, tilted or turned.
-Steps are found from true vertical acceleration (again via 3D orientation), and a bump only counts
-when it's part of a walking rhythm, so lifting, lowering or tilting the phone doesn't add steps.
-The first 8 steps confirm which way round the phone's sensor readings are, so walk forward normally
-right after pressing Start tracking. Direction detection can be turned off in Settings.
+- **Moving the phone (arm, small shuffles):** acceleration is rotated into room coordinates using
+  the phone's full 3D orientation and integrated into movement. Every time the phone comes to rest
+  its true speed is zero, so the error that built up during the movement is known and the whole
+  movement is corrected retroactively. Moving the phone out and back should settle where it started.
+- **Walking:** the phone never rests mid-walk, so integration would drift; when steps are detected
+  during a movement, step counting (with step length and per-stride direction) decides it instead.
+- Speed readings taken while the phone is moving wait until it rests, then go onto the map at
+  their corrected position. The best square (at least 2 s of readings) is outlined.
 
-Traffic goes to Cloudflare's public speed-test endpoints (`speed.cloudflare.com/__down` and `/__up`).
-
-**Data use:** it keeps the link saturated, so it uses data at full line rate (about 2 GB/min at 300 Mbps).
-It auto-stops at 10 GB by default; change that in Settings.
+**Sensor log:** Floor map → Sensor log records raw sensor readings plus every decision the map made,
+saved as JSON, so tracking can be replayed and tuned against real data.
 
 ## How the GitHub Pages link works
 

@@ -574,7 +574,7 @@
     bumps: [], win: { v2: 0, h2: 0 }, ignored: 0, rec: null,
     R: null, eb: null, ls: null, prevZ: null, lastT: 0, dirAcc: [0, 0, 0], prevAcc: [0, 0, 0],
     cal: { n: 0, s: 0, sign: 1 }, lastDir: '', lastWorld: 0, lastDirT: 0,
-    gotMotion: false, gotOrient: false, hover: null
+    gotMotion: false, gotOrient: false, hover: null, pending: [], lastMove: null
   };
   const fmt = v => !Number.isFinite(v) ? '–' : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -634,6 +634,7 @@
     // or turning the phone doesn't leak gravity into it. Falls back to a gravity estimate only
     // if the browser gives no orientation.
     let vert = worldMotion(v, now);
+    insUpdate(e, v);
     if (vert === undefined) {
       const gm = Math.hypot(M.g[0], M.g[1], M.g[2]) || 1;
       const raw = ((v[0] - M.g[0]) * M.g[0] + (v[1] - M.g[1]) * M.g[1] + (v[2] - M.g[2]) * M.g[2]) / gm;
@@ -723,25 +724,126 @@
     M.lastDir = dirLabel(wrap(dir - facing));
     return dir;
   }
+  // ================= Position engine =================
+  // The phone's position comes from two sources:
+  //  * Movement of the phone itself (arm, small shuffles): acceleration in room coordinates is
+  //    integrated twice. Whenever the phone comes to rest its true speed is zero, so the speed
+  //    error that built up during the movement is known and the whole movement is corrected
+  //    retroactively (the error grows smoothly, so it's removed in proportion to time squared).
+  //  * Walking: the phone never rests between steps, so that integration would drift. If steps
+  //    are detected during a movement, step counting decides that movement instead.
+  // Speed readings taken while the phone is moving wait until the movement is settled, then
+  // go onto the map at their corrected position.
+  const I = { state: 'still', base: [0, 0], seg: null, q: [], bias: [0, 0], lastT: 0, lastHistT: 0, lastDraw: 0 };
+  const QUIET_ACC = 0.35, QUIET_ROT = 25, MOVE_ACC = 0.6, MOVE_ROT = 45, QUIET_MS = 250, PRE_MS = 350;
+
+  function toMap(wx, wy) {           // room axes -> map axes (up = the way the phone faced at the start)
+    const r = M.headingRef, c = Math.cos(r), sn = Math.sin(r);
+    return [wx * c - wy * sn, wy * c + wx * sn];
+  }
+  function pushHist(t, x, y) {
+    M.hist.push({ t, x, y });
+    if (M.hist.length > 6000) M.hist.splice(0, M.hist.length - 6000);
+    const lp = M.path[M.path.length - 1];
+    if (!lp || Math.hypot(x - lp.x, y - lp.y) > 0.03) { M.path.push({ x, y }); if (M.path.length > 6000) M.path.shift(); }
+  }
+  function setLive() {
+    const sg = I.seg;
+    const p = !sg ? I.base : sg.steps ? [I.base[0] + sg.sd[0], I.base[1] + sg.sd[1]] : [I.base[0] + sg.p[0], I.base[1] + sg.p[1]];
+    M.x = p[0]; M.y = p[1];
+  }
+  function integrate(sg, q) {
+    const ax = q.ax - I.bias[0], ay = q.ay - I.bias[1];
+    sg.v[0] += ax * q.dt; sg.v[1] += ay * q.dt;
+    sg.p[0] += sg.v[0] * q.dt; sg.p[1] += sg.v[1] * q.dt;
+    sg.traj.push([q.t, sg.p[0], sg.p[1]]);
+  }
+  function insUpdate(e, v) {
+    const R = M.R; if (!R || !Number.isFinite(M.headingRef)) return;
+    const now = Date.now();
+    const dt = I.lastT ? Math.max(0.004, Math.min(0.05, (now - I.lastT) / 1000)) : 0.016; I.lastT = now;
+    const sgn = M.signVote >= 0 ? 1 : -1, la = e.acceleration;
+    const l = la && la.x != null ? [la.x * sgn, la.y * sgn, la.z * sgn]                 // gravity already removed by the OS
+      : [v[0] * sgn - 9.81 * R[6], v[1] * sgn - 9.81 * R[7], v[2] * sgn - 9.81 * R[8]];   // remove gravity using orientation
+    const w = [R[0] * l[0] + R[1] * l[1] + R[2] * l[2], R[3] * l[0] + R[4] * l[1] + R[5] * l[2], R[6] * l[0] + R[7] * l[1] + R[8] * l[2]];
+    const [mx, my] = toMap(w[0], w[1]);
+    const rr = e.rotationRate, rot = rr && rr.alpha != null ? Math.hypot(rr.alpha, rr.beta, rr.gamma) : 0;
+    const mag = Math.hypot(w[0], w[1], w[2]);
+    const smp = { t: now, ax: mx, ay: my, dt, mag, rot };
+    I.q.push(smp); while (I.q.length && now - I.q[0].t > PRE_MS) I.q.shift();
+
+    if (I.state === 'still') {
+      if (mag < QUIET_ACC && rot < QUIET_ROT) { I.bias[0] += 0.03 * (mx - I.bias[0]); I.bias[1] += 0.03 * (my - I.bias[1]); }
+      if (mag > MOVE_ACC || rot > MOVE_ROT) {
+        // start a movement, replaying the last ~0.35 s so its gentle start isn't lost
+        I.state = 'moving';
+        I.seg = { t0: I.q[0].t, v: [0, 0], p: [0, 0], traj: [[I.q[0].t, 0, 0]], steps: 0, sd: [0, 0] };
+        for (const q of I.q) integrate(I.seg, q);
+        status();
+      } else if (now - I.lastHistT > 100) {
+        I.lastHistT = now; pushHist(now, I.base[0], I.base[1]); flushPending();
+      }
+    } else {
+      integrate(I.seg, smp);
+      let quiet = 0;
+      for (let i = I.q.length - 1; i >= 0 && now - I.q[i].t <= QUIET_MS; i--) {
+        if (I.q[i].mag < QUIET_ACC && I.q[i].rot < QUIET_ROT) quiet++; else { quiet = -1; break; }
+      }
+      if (quiet >= 8) settle(now);
+    }
+    setLive();
+    if (now - I.lastDraw > 60) { I.lastDraw = now; draw(); }
+  }
+  // The phone has come to rest: fix up the movement that just ended.
+  function settle(now) {
+    const sg = I.seg; I.seg = null; I.state = 'still';
+    const T = Math.max(0.05, (now - sg.t0) / 1000);
+    let dx, dy, how;
+    if (sg.steps) {                      // walking: the steps are already on the trail
+      dx = sg.sd[0]; dy = sg.sd[1]; how = 'steps';
+    } else {
+      const vx = sg.v[0], vy = sg.v[1];  // true speed is zero now; what's left is integration error
+      const corr = t => { const tau = (t - sg.t0) / 1000, k = tau * tau / (2 * T); return [vx * k, vy * k]; };
+      let lastT = -1e9;
+      for (const [t, px, py] of sg.traj) {
+        if (t - lastT < 40) continue; lastT = t;
+        const c = corr(t); pushHist(t, I.base[0] + px - c[0], I.base[1] + py - c[1]);
+      }
+      const c = corr(now);
+      dx = sg.p[0] - c[0]; dy = sg.p[1] - c[1]; how = 'motion';
+      // a long movement with no steps and no rest will have drifted: cap how far it can move us
+      const d = Math.hypot(dx, dy), cap = 1.5 + 0.5 * T;
+      if (d > cap) { dx *= cap / d; dy *= cap / d; how = 'motion (capped)'; }
+    }
+    I.base[0] += dx; I.base[1] += dy;
+    pushHist(now, I.base[0], I.base[1]);
+    M.lastMove = { how, d: Math.hypot(dx, dy), T };
+    if (M.rec) M.rec.g.push([Math.round(performance.now() - M.rec.t0), +T.toFixed(2), how, +dx.toFixed(3), +dy.toFixed(3),
+      +sg.v[0].toFixed(3), +sg.v[1].toFixed(3), sg.steps]);
+    setLive(); flushPending(); save(); status(); draw();
+  }
+
   function step() {
     if (!Number.isFinite(M.heading) || !Number.isFinite(M.headingRef)) return;
     const L = stepLen(), h = stepDirection() - M.headingRef;
-    M.x += L * Math.sin(h); M.y += L * Math.cos(h);
+    const dx = L * Math.sin(h), dy = L * Math.cos(h);
     M.steps++; M.dist += L;
-    M.hist.push({ t: Date.now(), x: M.x, y: M.y });
-    if (M.hist.length > 400) M.hist.splice(0, M.hist.length - 400);
-    M.path.push({ x: M.x, y: M.y });
+    if (I.seg) {
+      I.seg.steps++; I.seg.sd[0] += dx; I.seg.sd[1] += dy;
+      pushHist(Date.now(), I.base[0] + I.seg.sd[0], I.base[1] + I.seg.sd[1]);
+    } else { I.base[0] += dx; I.base[1] += dy; pushHist(Date.now(), I.base[0], I.base[1]); }
+    setLive();
     if (M.rec) M.rec.s.push([Math.round(performance.now() - M.rec.t0), +M.x.toFixed(3), +M.y.toFixed(3), M.lastDir]);
-    save(); status(); draw();
+    flushPending(); save(); status(); draw();
   }
-  // Position at a past time, interpolating across the step that was in progress then.
+  // Settled position at a past time.
   function posAt(t) {
     const h = M.hist;
-    if (!h.length || t >= h[h.length - 1].t) return { x: M.x, y: M.y };
+    if (!h.length) return { x: M.x, y: M.y };
+    if (t >= h[h.length - 1].t) return { x: h[h.length - 1].x, y: h[h.length - 1].y };
     for (let i = h.length - 1; i > 0; i--) {
       if (h[i - 1].t <= t) {
         const k = (t - h[i - 1].t) / Math.max(1, h[i].t - h[i - 1].t);
-        if (h[i].t - h[i - 1].t > 1500) return t < h[i].t - 600 ? { x: h[i - 1].x, y: h[i - 1].y } : { x: h[i].x, y: h[i].y };
         return { x: h[i - 1].x + (h[i].x - h[i - 1].x) * k, y: h[i - 1].y + (h[i].y - h[i - 1].y) * k };
       }
     }
@@ -751,8 +853,19 @@
   // ---------- samples from the speed monitor ----------
   function addSample(pt, smoothS) {
     if (!M.enabled || !M.tracking || !Number.isFinite(M.headingRef)) return;
-    const pos = posAt(pt.t - smoothS * 500);      // the reading is centred half a smoothing window ago
-    pt.x = pos.x; pt.y = pos.y;
+    pt.lagT = pt.t - smoothS * 500;               // the reading is centred half a smoothing window ago
+    M.pending.push(pt); flushPending();
+  }
+  function flushPending() {
+    const h = M.hist, lastT = h.length ? h[h.length - 1].t : 0;
+    let placed = false;
+    while (M.pending.length && M.pending[0].lagT <= lastT) { place(M.pending.shift()); placed = true; }
+    if (M.pending.length > 600) M.pending.splice(0, M.pending.length - 600);
+    if (placed) { save(); draw(); }
+  }
+  function place(pt) {
+    const pos = posAt(pt.lagT);
+    pt.x = pos.x; pt.y = pos.y; delete pt.lagT;
     const keys = new Set();
     const from = M.lastPos && Math.hypot(pos.x - M.lastPos.x, pos.y - M.lastPos.y) < 3 ? M.lastPos : pos;
     const d = Math.hypot(pos.x - from.x, pos.y - from.y), n = Math.max(1, Math.ceil(d / (CELL / 2)));
@@ -765,7 +878,6 @@
       for (const dir of ['down', 'up']) if (Number.isFinite(pt[dir])) { c[dir][0] += pt[dir]; c[dir][1]++; }
     }
     M.lastPos = pos;
-    save(); draw();
   }
 
   // ---------- controls ----------
@@ -778,12 +890,15 @@
       return;
     }
     if ($('startBtn').textContent !== 'Stop') { $('mapStatus').textContent = 'Tracking your position. Press Start at the top to measure speed, so the map can fill in.'; return; }
-    const cal = $('optSide').checked && M.cal.n < CAL_STEPS ? ` · walk forward normally to calibrate (${M.cal.n}/${CAL_STEPS})` : '';
-    $('mapStatus').textContent = `Tracking · ${M.steps} steps · ${M.dist.toFixed(1)} m${M.lastDir ? ' · last step: ' + M.lastDir : ''}${M.ignored ? ` · ${M.ignored} handling movement${M.ignored > 1 ? 's' : ''} ignored` : ''}${cal}. Up on the map is the way you faced at the start.`;
+    const cal = $('optSide').checked && M.cal.n < CAL_STEPS ? ` · direction calibration ${M.cal.n}/${CAL_STEPS} steps` : '';
+    const mode = I.state === 'still' ? 'phone at rest' : I.seg && I.seg.steps ? 'walking' : 'phone moving';
+    const lm = M.lastMove ? ` · last move ${(M.lastMove.d * 100).toFixed(0)} cm by ${M.lastMove.how}` : '';
+    $('mapStatus').textContent = `${mode} · ${M.steps} steps${lm}${M.pending.length ? ` · ${M.pending.length} reading${M.pending.length > 1 ? 's' : ''} waiting for the phone to rest` : ''}${cal}. Up on the map is the way the phone faced at the start.`;
   }
   function resetMap() {
     M.x = 0; M.y = 0; M.steps = 0; M.dist = 0; M.cells = new Map(); M.path = [{ x: 0, y: 0 }];
     M.hist = [{ t: Date.now(), x: 0, y: 0 }]; M.lastPos = null; M.needRef = true; M.headingRef = NaN; M.frameStale = false;
+    I.state = 'still'; I.base = [0, 0]; I.seg = null; I.q = []; I.bias = [0, 0]; I.lastT = 0; M.pending = []; M.lastMove = null;
     M.hover = null; $('mapTip').style.display = 'none';
     save(); status(); draw();
   }
@@ -799,6 +914,7 @@
     M.gInit = false; M.needRef = !Number.isFinite(M.headingRef); M.lastPos = null;
     M.eb = null; M.prevZ = null; M.dirAcc = [0, 0, 0]; M.prevAcc = [0, 0, 0]; M.cal = { n: 0, s: 0, sign: 1 }; M.lastDir = '';
     M.walking = false; M.lastPeakT = -1e9; M.signVote = 0; M.bumps = []; M.win = { v2: 0, h2: 0 }; M.ignored = 0;
+    I.state = 'still'; I.seg = null; I.q = []; I.bias = [0, 0]; I.lastT = 0; I.base = [M.x, M.y]; M.pending = [];
     M.hist.push({ t: Date.now(), x: M.x, y: M.y });
     addEventListener('devicemotion', onMotion); addEventListener('deviceorientation', onOrient);
     M.tracking = true; $('mapTrackBtn').textContent = 'Stop tracking'; status();
@@ -870,6 +986,12 @@
     if (M.path.length > 1) {
       ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.beginPath();
       M.path.forEach((p, n) => n ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y)));
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    // live, not-yet-corrected movement of the phone
+    if (I.seg && !I.seg.steps && I.seg.traj.length > 1) {
+      ctx.strokeStyle = css('--text-2'); ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.beginPath();
+      I.seg.traj.forEach((q, n) => { const x = X(I.base[0] + q[1]), y = Y(I.base[1] + q[2]); n ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
       ctx.stroke(); ctx.setLineDash([]);
     }
     // best square
@@ -944,7 +1066,7 @@
   let recTimer = null, recBlob = null;
   async function startRec() {
     if (!M.tracking) { await startTracking(); if (!M.tracking) return; }
-    M.rec = { t0: performance.now(), started: new Date().toISOString(), m: [], o: [], s: [], b: [] };
+    M.rec = { t0: performance.now(), started: new Date().toISOString(), m: [], o: [], s: [], b: [], g: [] };
     recBlob = null; $('recSaveBtn').disabled = true; $('recBtn').textContent = 'Stop recording';
     recTimer = setInterval(() => {
       const sec = (performance.now() - M.rec.t0) / 1000;
@@ -959,8 +1081,9 @@
     const log = { version: 1, started: r.started, note: $('recNote').value, userAgent: navigator.userAgent,
       stepLengthCm: +$('optStep').value, directionDetection: $('optSide').checked,
       fields: { m: 't,ax,ay,az (incl. gravity),lx,ly,lz (no gravity),rotAlpha,rotBeta,rotGamma', o: 't,alpha,beta,gamma,compass',
-        s: 't,x,y,dirLabel (steps the map took)', b: 't,gapMs,maxTiltDegInStep,horizVertRatio,accepted (step candidates)' },
-      m: r.m, o: r.o, s: r.s, b: r.b };
+        s: 't,x,y,dirLabel (steps the map took)', b: 't,gapMs,maxTiltDegInStep,horizVertRatio,accepted (step candidates)',
+        g: 't,durationS,method,dx,dy,leftoverVx,leftoverVy,steps (movements settled when the phone came to rest)' },
+      m: r.m, o: r.o, s: r.s, b: r.b, g: r.g };
     recBlob = new Blob([JSON.stringify(log)], { type: 'application/json' });
     $('recBtn').textContent = 'Record sensor log'; $('recSaveBtn').disabled = false;
     $('recInfo').textContent = `${((performance.now() - r.t0) / 1000).toFixed(0)} s recorded · ${(recBlob.size / 1024).toFixed(0)} KB`;
