@@ -165,6 +165,18 @@
       <span id="mapMin">–</span><i class="ramp" id="mapRamp"></i><span id="mapMax">–</span><span>Mbps</span>
     </div>
     <p class="hint" id="mapStatus">Hold the phone in front of you, screen up, and walk normally. Press Reset map where you want the origin.</p>
+    <details style="margin-top:8px">
+      <summary>Sensor log (for tuning)</summary>
+      <p class="hint">Records raw motion and orientation readings plus what the map decided, so the tracking can be replayed and tuned. Say what you did in the box, then record the walk. It stops after 3 minutes.</p>
+      <div class="row" style="margin-top:6px">
+        <input id="recNote" type="text" placeholder="e.g. 3 steps diagonally forward-left, turned, walked back">
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="recBtn">Record sensor log</button>
+        <button id="recSaveBtn" disabled>Save log</button>
+        <span class="hint" id="recInfo" style="margin:0"></span>
+      </div>
+    </details>
   </section>
 
   <section class="card">
@@ -559,6 +571,7 @@
     hist: [{ t: Date.now(), x: 0, y: 0 }], lastPos: null,
     cells: new Map(), path: [{ x: 0, y: 0 }],
     g: [0, 0, 0], gInit: false, vs: 0, armed: true, lastPeakT: -1e9, walking: false, signVote: 0,
+    bumps: [], win: { v2: 0, h2: 0 }, ignored: 0, rec: null,
     R: null, eb: null, ls: null, prevZ: null, lastT: 0, dirAcc: [0, 0, 0], prevAcc: [0, 0, 0],
     cal: { n: 0, s: 0, sign: 1 }, lastDir: '', lastWorld: 0, lastDirT: 0,
     gotMotion: false, gotOrient: false, hover: null
@@ -592,6 +605,8 @@
   function onOrient(e) {
     if (e.alpha == null || e.beta == null || e.gamma == null) return;
     M.gotOrient = true;
+    if (M.rec) M.rec.o.push([Math.round(performance.now() - M.rec.t0), +e.alpha.toFixed(2), +e.beta.toFixed(2), +e.gamma.toFixed(2),
+      e.webkitCompassHeading != null ? +e.webkitCompassHeading.toFixed(1) : null]);
     const d = Math.PI / 180, a = e.alpha * d, b = e.beta * d, g = e.gamma * d;
     const sa = Math.sin(a), ca = Math.cos(a), sb = Math.sin(b), cb = Math.cos(b), sg = Math.sin(g), cg = Math.cos(g);
     const fx = -sa * cb - ca * sg - sa * sb * cg;
@@ -609,6 +624,8 @@
     const a = e.accelerationIncludingGravity;
     if (!a || a.x == null) return;
     M.gotMotion = true;
+    if (M.rec) { const l = e.acceleration || {}, r = e.rotationRate || {}, f = x => x == null ? null : +x.toFixed(3);
+      M.rec.m.push([Math.round(performance.now() - M.rec.t0), f(a.x), f(a.y), f(a.z), f(l.x), f(l.y), f(l.z), f(r.alpha), f(r.beta), f(r.gamma)]); }
     const v = [a.x, a.y, a.z];
     if (!M.gInit) { M.g = v.slice(); M.gInit = true; return; }
     for (let i = 0; i < 3; i++) M.g[i] += 0.02 * (v[i] - M.g[i]);
@@ -626,17 +643,29 @@
     else if (!M.armed && vert < -0.3) M.armed = true;
   }
 
-  // A bump only counts as a step when it's part of a walking rhythm (another bump 0.25-1.3 s away).
-  // Lifting, lowering or flicking the phone gives one isolated bump, which is ignored.
+  // A bump only counts as a step when it's part of a steady walking rhythm: three bumps 0.33-0.85 s
+  // apart (about 1.2-3 steps a second) with similar spacing. Bumps where the phone tilted a lot, or that were mostly sideways
+  // motion of the phone rather than up-and-down body motion, are treated as handling and ignored.
   function stepCandidate(now) {
-    const gap = now - M.lastPeakT; M.lastPeakT = now;
-    if (gap >= 250 && gap <= 1300) {
-      if (!M.walking) { M.walking = true; step(); }   // the bump that started this walk
-      step();
-    } else {
-      M.walking = false;                              // possible first step: wait for the next one
+    const w = M.win; M.win = { v2: 0, h2: 0 };
+    const ratio = w.v2 > 0 ? Math.sqrt(w.h2 / w.v2) : 0;
+    const prev = M.bumps[M.bumps.length - 1];
+    const gap = prev ? now - prev.t : Infinity;
+    const tilt = w.tilt || 0;
+    const prevGap = M.bumps.length >= 2 ? prev.t - M.bumps[M.bumps.length - 2].t : null;
+    const rhythm = gap >= 330 && gap <= 850 && (prevGap === null || (gap / prevGap > 0.6 && gap / prevGap < 1.6));
+    const handling = prev && (tilt > 15 || ratio > 1.4);
+    const ok = rhythm && !handling;
+    if (M.rec) M.rec.b.push([Math.round(now - M.rec.t0), Number.isFinite(gap) ? Math.round(gap) : null, +tilt.toFixed(1), +ratio.toFixed(2), ok ? 1 : 0]);
+    if (!ok) {
+      if (handling) M.ignored++;
+      M.walking = false; M.bumps = [{ t: now }];
       M.dirAcc = [0, 0, 0]; M.prevAcc = [0, 0, 0];
+      return;
     }
+    M.bumps.push({ t: now }); if (M.bumps.length > 4) M.bumps.shift();
+    if (M.walking) { step(); return; }
+    if (M.bumps.length >= 3) { M.walking = true; step(); step(); step(); }   // the three bumps that set the rhythm
   }
 
   // ---- Which way was the step? ----
@@ -658,6 +687,10 @@
     const dz = (M.ls[2] - (M.prevZ ?? M.ls[2])) / dt; M.prevZ = M.ls[2];
     M.dirAcc[0] += M.ls[0] * dz * dt; M.dirAcc[1] += M.ls[1] * dz * dt;
     M.dirAcc[2] += Math.hypot(M.ls[0], M.ls[1]) * Math.abs(dz) * dt;
+    M.win.v2 += M.ls[2] * M.ls[2]; M.win.h2 += M.ls[0] * M.ls[0] + M.ls[1] * M.ls[1];
+    const u = [R[6], R[7], R[8]];                    // how much the phone tilts during this step
+    if (!M.win.u0) M.win.u0 = u;
+    else M.win.tilt = Math.max(M.win.tilt || 0, Math.acos(Math.min(1, u[0] * M.win.u0[0] + u[1] * M.win.u0[1] + u[2] * M.win.u0[2])) * 180 / Math.PI);
     return M.ls[2];
   }
   const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -698,6 +731,7 @@
     M.hist.push({ t: Date.now(), x: M.x, y: M.y });
     if (M.hist.length > 400) M.hist.splice(0, M.hist.length - 400);
     M.path.push({ x: M.x, y: M.y });
+    if (M.rec) M.rec.s.push([Math.round(performance.now() - M.rec.t0), +M.x.toFixed(3), +M.y.toFixed(3), M.lastDir]);
     save(); status(); draw();
   }
   // Position at a past time, interpolating across the step that was in progress then.
@@ -745,7 +779,7 @@
     }
     if ($('startBtn').textContent !== 'Stop') { $('mapStatus').textContent = 'Tracking your position. Press Start at the top to measure speed, so the map can fill in.'; return; }
     const cal = $('optSide').checked && M.cal.n < CAL_STEPS ? ` · walk forward normally to calibrate (${M.cal.n}/${CAL_STEPS})` : '';
-    $('mapStatus').textContent = `Tracking · ${M.steps} steps · ${M.dist.toFixed(1)} m${M.lastDir ? ' · last step: ' + M.lastDir : ''}${cal}. Up on the map is the way you faced at the start.`;
+    $('mapStatus').textContent = `Tracking · ${M.steps} steps · ${M.dist.toFixed(1)} m${M.lastDir ? ' · last step: ' + M.lastDir : ''}${M.ignored ? ` · ${M.ignored} handling movement${M.ignored > 1 ? 's' : ''} ignored` : ''}${cal}. Up on the map is the way you faced at the start.`;
   }
   function resetMap() {
     M.x = 0; M.y = 0; M.steps = 0; M.dist = 0; M.cells = new Map(); M.path = [{ x: 0, y: 0 }];
@@ -764,7 +798,7 @@
     if (M.frameStale) resetMap();
     M.gInit = false; M.needRef = !Number.isFinite(M.headingRef); M.lastPos = null;
     M.eb = null; M.prevZ = null; M.dirAcc = [0, 0, 0]; M.prevAcc = [0, 0, 0]; M.cal = { n: 0, s: 0, sign: 1 }; M.lastDir = '';
-    M.walking = false; M.lastPeakT = -1e9; M.signVote = 0;
+    M.walking = false; M.lastPeakT = -1e9; M.signVote = 0; M.bumps = []; M.win = { v2: 0, h2: 0 }; M.ignored = 0;
     M.hist.push({ t: Date.now(), x: M.x, y: M.y });
     addEventListener('devicemotion', onMotion); addEventListener('deviceorientation', onOrient);
     M.tracking = true; $('mapTrackBtn').textContent = 'Stop tracking'; status();
@@ -774,6 +808,7 @@
     }, 2500);
   }
   function stopTracking() {
+    if (M.rec) stopRec();
     removeEventListener('devicemotion', onMotion); removeEventListener('deviceorientation', onOrient);
     M.tracking = false; $('mapTrackBtn').textContent = 'Start tracking'; status(); save();
   }
@@ -905,6 +940,43 @@
   };
   const applyLayer = () => document.querySelectorAll('[data-layer]').forEach(b => b.setAttribute('aria-pressed', b.dataset.layer === M.layer));
   document.querySelectorAll('[data-layer]').forEach(b => b.onclick = () => { M.layer = b.dataset.layer; applyLayer(); save(); draw(); });
+
+  let recTimer = null, recBlob = null;
+  async function startRec() {
+    if (!M.tracking) { await startTracking(); if (!M.tracking) return; }
+    M.rec = { t0: performance.now(), started: new Date().toISOString(), m: [], o: [], s: [], b: [] };
+    recBlob = null; $('recSaveBtn').disabled = true; $('recBtn').textContent = 'Stop recording';
+    recTimer = setInterval(() => {
+      const sec = (performance.now() - M.rec.t0) / 1000;
+      $('recInfo').textContent = `Recording ${sec.toFixed(0)} s · ${M.rec.m.length} readings`;
+      if (sec >= 180) stopRec();
+    }, 500);
+  }
+  function stopRec() {
+    if (!M.rec) return;
+    clearInterval(recTimer);
+    const r = M.rec; M.rec = null;
+    const log = { version: 1, started: r.started, note: $('recNote').value, userAgent: navigator.userAgent,
+      stepLengthCm: +$('optStep').value, directionDetection: $('optSide').checked,
+      fields: { m: 't,ax,ay,az (incl. gravity),lx,ly,lz (no gravity),rotAlpha,rotBeta,rotGamma', o: 't,alpha,beta,gamma,compass',
+        s: 't,x,y,dirLabel (steps the map took)', b: 't,gapMs,maxTiltDegInStep,horizVertRatio,accepted (step candidates)' },
+      m: r.m, o: r.o, s: r.s, b: r.b };
+    recBlob = new Blob([JSON.stringify(log)], { type: 'application/json' });
+    $('recBtn').textContent = 'Record sensor log'; $('recSaveBtn').disabled = false;
+    $('recInfo').textContent = `${((performance.now() - r.t0) / 1000).toFixed(0)} s recorded · ${(recBlob.size / 1024).toFixed(0)} KB`;
+  }
+  async function saveRec() {
+    if (!recBlob) return;
+    const name = `5g-sensor-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+    const file = new File([recBlob], name, { type: 'application/json' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    } catch (e) { if (e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(recBlob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  $('recBtn').onclick = () => M.rec ? stopRec() : startRec();
+  $('recSaveBtn').onclick = saveRec;
 
   window.FloorMap = { addSample, refresh: () => status(), _test: { M, step, onOrient, onMotion } };
   applyLayer(); setEnabled(M.enabled);
